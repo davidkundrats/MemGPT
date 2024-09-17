@@ -71,6 +71,57 @@ def azure_openai_get_model_list(url: str, api_key: Union[str, None], api_version
         raise e
 
 
+def format_to_openai_dict(message_dict):
+    """
+    Format a dictionary to OpenAI-style message object.
+    Handles various roles: system, user, assistant, and tool.
+    """
+    formatted_message = {}
+
+    role = message_dict.get('role', None)
+    content = message_dict.get('content', None)
+    tool_calls = message_dict.get('tool_calls', None)
+    tool_call_id = message_dict.get('tool_call_id', None)
+
+    if role == "system" or role == "user":
+        # System and user messages are straightforward
+        formatted_message = {
+            "role": role,
+            "content": content,
+        }
+        # Optional field: name
+        if "name" in message_dict:
+            formatted_message["name"] = message_dict["name"]
+
+    elif role == "assistant":
+        # Assistant messages can include tool calls
+        formatted_message = {
+            "role": role,
+            "content": content,
+        }
+        if tool_calls is not None:
+            formatted_message["tool_calls"] = [
+                {
+                    "id": call.get("id"),
+                    "type": call.get("type"),
+                    "function": call.get("function"),
+                }
+                for call in tool_calls
+            ]
+    
+    elif role == "tool":
+        # Tool messages include the tool_call_id
+        formatted_message = {
+            "role": role,
+            "content": content,
+            "tool_call_id": tool_call_id,
+        }
+
+    else:
+        raise ValueError(f"Unknown role: {role}")
+
+    return formatted_message
+
 def azure_openai_chat_completions_request(
     resource_name: str, deployment_id: str, api_version: str, api_key: str, data: dict
 ) -> ChatCompletionResponse:
@@ -96,8 +147,9 @@ def azure_openai_chat_completions_request(
         data.pop("tool_choice", None)  # extra safe,  should exist always (default="auto")
 
     printd(f"Sending request to {url}")
+   
     try:
-        data["messages"] = [i.to_openai_dict() for i in data["messages"]]
+        data["messages"] = [format_to_openai_dict(i) for i in data["messages"]]
         response = requests.post(url, headers=headers, json=data)
         printd(f"response = {response}")
         response.raise_for_status()  # Raises HTTPError for 4XX/5XX status
@@ -120,7 +172,6 @@ def azure_openai_chat_completions_request(
         # Handle other potential errors
         printd(f"Got unknown Exception, exception={e}")
         raise e
-
 
 def azure_openai_embeddings_request(
     resource_name: str, deployment_id: str, api_version: str, api_key: str, data: dict

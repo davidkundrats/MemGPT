@@ -548,16 +548,19 @@ class Agent(BaseAgent):
             )  # extend conversation with assistant's reply
             printd(f"Function call message: {messages[-1]}")
 
-            # The content if then internal monologue, not chat
-            self.interface.internal_monologue(response_message.content, msg_obj=messages[-1])
-
-            # Step 3: call the function
-            # Note: the JSON response may not always be valid; be sure to handle errors
-
-            # Failure case 1: function name is wrong
+           # Fix: Check if 'inner_thoughts' exists in function arguments and move to content
             function_call = (
                 response_message.function_call if response_message.function_call is not None else response_message.tool_calls[0].function
             )
+            raw_function_args = function_call.arguments
+            function_args = parse_json(raw_function_args)
+            
+            if "inner_thoughts" in function_args:
+                response_message.content = function_args.pop("inner_thoughts")
+
+            # The content if then internal monologue, not chat
+            self.interface.internal_monologue(response_message.content, msg_obj=messages[-1])
+            
             function_name = function_call.name
             printd(f"Request to call function {function_name} with tool_call_id: {tool_call_id}")
             try:
@@ -607,7 +610,11 @@ class Agent(BaseAgent):
             # (Still parsing function args)
             # Handle requests for immediate heartbeat
             heartbeat_request = function_args.pop("request_heartbeat", None)
-            if not isinstance(heartbeat_request, bool) or heartbeat_request is None:
+            
+            if "inner_thoughts" in function_args:
+                response_message.content = function_args.pop("inner_thoughts") # TODO: DNRY
+            if not (isinstance(heartbeat_request, bool) or heartbeat_request is None):
+
                 printd(
                     f"{CLI_WARNING_PREFIX}'request_heartbeat' arg parsed was not a bool or None, type={type(heartbeat_request)}, value={heartbeat_request}"
                 )
